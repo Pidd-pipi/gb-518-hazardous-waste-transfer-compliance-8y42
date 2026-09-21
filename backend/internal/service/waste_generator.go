@@ -32,11 +32,23 @@ func NewWasteGeneratorService(repo repository.WasteGeneratorRepository, security
 }
 
 func (s *wasteGeneratorService) List(ctx context.Context, query dto.PageQuery) (repository.Page[model.WasteGenerator], error) {
-	return s.repository.List(ctx, query)
+	page, err := s.repository.List(ctx, query)
+	if err != nil {
+		return page, err
+	}
+	for index := range page.Items {
+		decorateGenerator(&page.Items[index])
+	}
+	return page, nil
 }
 
 func (s *wasteGeneratorService) Get(ctx context.Context, id uint) (model.WasteGenerator, error) {
-	return s.repository.Get(ctx, id)
+	item, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return item, err
+	}
+	decorateGenerator(&item)
+	return item, nil
 }
 
 func (s *wasteGeneratorService) Create(ctx context.Context, input dto.CreateWasteGenerator, actor, requestID string) (model.WasteGenerator, error) {
@@ -59,6 +71,7 @@ func (s *wasteGeneratorService) Create(ctx context.Context, input dto.CreateWast
 	if err := s.repository.CreateAudited(ctx, &item, newAuditLog(actor, requestID, "create", "WasteGenerator", "", item.Status, "created generator permit")); err != nil {
 		return model.WasteGenerator{}, fmt.Errorf("create 产废单位: %w", err)
 	}
+	decorateGenerator(&item)
 	return item, nil
 }
 
@@ -89,7 +102,12 @@ func (s *wasteGeneratorService) Update(ctx context.Context, id uint, input dto.U
 	if err := s.repository.UpdateAudited(ctx, id, input.ExpectedVersion, &current, newAuditLog(actor, requestID, "update", "WasteGenerator", current.Status, current.Status, "updated generator permit and evidence")); err != nil {
 		return model.WasteGenerator{}, fmt.Errorf("update 产废单位: %w", err)
 	}
-	return s.repository.Get(ctx, id)
+	updated, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return model.WasteGenerator{}, err
+	}
+	decorateGenerator(&updated)
+	return updated, nil
 }
 
 func (s *wasteGeneratorService) Transition(ctx context.Context, id uint, input dto.TransitionRequest, actor, requestID string) (model.WasteGenerator, error) {
@@ -111,7 +129,12 @@ func (s *wasteGeneratorService) Transition(ctx context.Context, id uint, input d
 	if err := s.repository.UpdateAudited(ctx, id, input.ExpectedVersion, &current, newAuditLog(actor, requestID, "transition", "WasteGenerator", before, target, input.Reason)); err != nil {
 		return model.WasteGenerator{}, fmt.Errorf("transition 产废单位: %w", err)
 	}
-	return s.repository.Get(ctx, id)
+	updated, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return model.WasteGenerator{}, err
+	}
+	decorateGenerator(&updated)
+	return updated, nil
 }
 
 func (s *wasteGeneratorService) Delete(ctx context.Context, id uint, actor, requestID string) error {
@@ -137,4 +160,9 @@ func validateWasteGeneratorBusinessFields(code, name, facility, owner, permitNum
 		return fmt.Errorf("%w: generator permit must not be expired", ErrInvalidInput)
 	}
 	return nil
+}
+
+// decorateGenerator 填充实时解析的许可类别视图，供工作台展示可转运类别。
+func decorateGenerator(item *model.WasteGenerator) {
+	item.PermittedCategoryCodes = PermittedCategoryCodes(item.WasteCategories)
 }

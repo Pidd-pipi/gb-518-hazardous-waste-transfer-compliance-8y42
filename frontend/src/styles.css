@@ -43,6 +43,12 @@ td small { display: block; color: #7d8d97; margin-top: 4px; }
 .status--success { color: #176c55; background: #dff3ec; }.status--warning { color: #8a5a08; background: #fff1ce; }.status--danger { color: #9d2c37; background: #fde4e6; }.status--neutral { color: #506572; background: #e9eff2; }
 .table-action, .link-button { border: 0; background: none; color: #167c66; cursor: pointer; font-weight: 650; padding: 5px; }
 .muted, .empty { color: #82919a; }.empty { text-align: center; padding: 40px; }
+.category-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.category-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; color: #285c77; background: #e3eef4; border: 1px solid #c2d6e0; }
+.category-chip--ok { color: #176c55; background: #dff3ec; border-color: #9fd8c6; }
+.category-chip--bad { color: #9d2c37; background: #fde4e6; border-color: #efb3b9; }
+.category-match { margin-top: 6px; display: grid; gap: 3px; }
+.category-match small { margin-top: 0; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.72); color: #176c55; font-weight: 700; }
 .alert { padding: 12px; margin-bottom: 12px; color: #922b34; background: #fde8ea; border-left: 4px solid #c84855; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: rgba(10,25,35,.52); }

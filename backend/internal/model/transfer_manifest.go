@@ -21,6 +21,10 @@ type TransferManifest struct {
 	EffectiveAt   time.Time `json:"effectiveAt"`
 	Evidence      string    `json:"evidence" gorm:"size:2000"`
 	RelatedCode   string    `json:"relatedCode" gorm:"size:64;index"`
+	// 下列字段为按当前许可实时计算的核验视图，不落库；省略时历史消费者可忽略。
+	PermittedCategories []string `json:"permittedCategories,omitempty" gorm:"-"`
+	MatchedCategory     string   `json:"matchedCategory,omitempty" gorm:"-"`
+	CategoryMatched     bool     `json:"categoryMatched" gorm:"-"`
 }
 
 func (item *TransferManifest) GetBase() *BaseModel { return &item.BaseModel }

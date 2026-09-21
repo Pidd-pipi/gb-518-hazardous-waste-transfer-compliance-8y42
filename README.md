@@ -39,8 +39,10 @@ docker compose down -v --remove-orphans
 | 合规核验 | `ComplianceCheck` | `/api/checks` | 关联联单、核验清单、证据与决定依据 |
 
 - JWT 登录和 viewer/operator/reviewer/admin 四级 RBAC，后端 middleware、前端守卫、导航与按钮同步生效。
-- 联单提交和发运前会重新核验产废许可为 `active`、承运资质为 `verified`，且双方证照仍在有效期内。
+- 联单新建与草案编辑时核验废物代码必须落在产废单位当前许可类别内，许可类别字段兼容英文逗号、中文逗号与顿号分隔；不合规返回 422 可读业务错误且草案不落库。
+- 联单提交和发运前会按当前许可重新核验产废许可为 `active`、承运资质为 `verified`、双方证照仍在有效期内且废物类别仍被许可覆盖；许可范围缩窄时整单拒绝，联单状态与版本保持不变。
 - 联单只允许 `draft → submitted → in_transit → received`，`submitted/in_transit` 可转 `rejected`；核验决定不可回退，失败仅可升级复核。
+- 工作台实时展示产废单位可转运类别（`permittedCategoryCodes`）与联单匹配结果（`permittedCategories`、`matchedCategory`、`categoryMatched`），均为按当前许可解析的只读视图，历史字段（如 `wasteCategories`）保持不变。
 - 已提交联单和已决定核验不可编辑或删除；写入使用乐观锁。
 - 建档、许可/证据更新、状态变化和删除与审计日志在同一数据库事务中提交，审计保留 actor 与 request ID。
 - 请求 ID、结构化日志、全局错误映射和 Redis 分布式限流。

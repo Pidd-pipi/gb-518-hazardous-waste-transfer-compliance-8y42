@@ -18,12 +18,16 @@ export interface DomainRecord {
 	permitNumber?: string;
 	permitExpiresAt?: string;
 	wasteCategories?: string;
+	permittedCategoryCodes?: string[];
 	licenseNumber?: string;
 	licenseExpiresAt?: string;
 	vehicleCount?: number;
 	generatorCode?: string;
 	carrierCode?: string;
 	wasteCode?: string;
+	permittedCategories?: string[];
+	matchedCategory?: string;
+	categoryMatched?: boolean;
 	quantityKg?: number;
 	destination?: string;
 	manifestCode?: string;

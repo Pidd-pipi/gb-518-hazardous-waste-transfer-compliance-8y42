@@ -3,12 +3,14 @@ import { ChangeDetectorRef, Component, Input, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatInputModule } from '@angular/material/input';
+import { request } from '../api/client';
 import { useAuth } from '../hooks/use-auth';
 import { createPagination } from '../hooks/use-pagination';
 import type { EntityStore } from '../stores/factory';
 import type { DomainRecord, EntityConfig } from '../types/domain';
 import { TRANSITIONS } from '../types/status';
 import { formatDate } from '../utils/format';
+import { matchWasteCategory, parsePermittedCategories } from '../utils/waste-category';
 import { ConfirmDialogComponent } from './common/confirm-dialog.component';
 import { LicensePanelComponent } from './common/license-panel.component';
 import { MetricCardComponent } from './common/metric-card.component';
@@ -48,7 +50,17 @@ import { StatusBadgeComponent } from './common/status-badge.component';
               <td><strong>{{ item.code }}</strong></td>
               <td>{{ item.name }}<small>{{ item.facility }}</small></td>
               <td><app-status-badge [status]="item.status" /></td>
-              <td><span class="domain-detail">{{ domainDetail(item) }}</span><small>{{ item.evidence }}</small></td>
+              <td><span class="domain-detail">{{ domainDetail(item) }}</span><small>{{ item.evidence }}</small>
+                <ng-container *ngIf="config.key === 'transferManifest'">
+                  <div class="category-match">
+                    <span class="category-chip" [class.category-chip--bad]="!categoryMatch(item).matched" [class.category-chip--ok]="categoryMatch(item).matched">
+                      {{ categoryMatch(item).category || '类别未识别' }}
+                      {{ categoryMatch(item).matched ? '✓ 在许可范围' : '✗ 超出当前许可' }}
+                    </span>
+                    <small>可转运类别：{{ permittedList(item) }}</small>
+                  </div>
+                </ng-container>
+              </td>
               <td><span [class]="'risk risk--' + item.riskLevel">{{ item.riskLevel }}</span></td>
               <td>{{ item.owner }}</td>
               <td>{{ item.metricValue }} {{ item.metricUnit }}</td>
@@ -91,10 +103,14 @@ export class EntityPageComponent implements OnInit {
   search = '';
   showCreate = false;
   pending: { item: DomainRecord; status: string } | null = null;
+  generatorCategories = new Map<string, string[]>();
 
   constructor(private readonly changeDetector: ChangeDetectorRef) {}
 
-  async ngOnInit(): Promise<void> { await this.load(); }
+  async ngOnInit(): Promise<void> {
+    if (this.config.key === 'transferManifest') await this.loadGeneratorCategories();
+    await this.load();
+  }
   trackById(_index: number, item: DomainRecord): number { return item.id; }
   highRisk(items: DomainRecord[]): number { return items.filter((item) => ['high', 'critical'].includes(item.riskLevel)).length; }
   statusCount(items: DomainRecord[]): number { return new Set(items.map((item) => item.status)).size; }
@@ -115,8 +131,38 @@ export class EntityPageComponent implements OnInit {
   domainDetail(item: DomainRecord): string {
     if (this.config.key === 'wasteGenerator') return `${item.permitNumber || '-'} · ${item.wasteCategories || '-'}`;
     if (this.config.key === 'carrierProfile') return `${item.licenseNumber || '-'} · ${item.vehicleCount || 0} 辆`;
-    if (this.config.key === 'transferManifest') return `${item.generatorCode} → ${item.carrierCode} · ${item.quantityKg} kg`;
+    if (this.config.key === 'transferManifest') return `${item.generatorCode} → ${item.carrierCode} · ${item.wasteCode} · ${item.quantityKg} kg`;
     return `${item.manifestCode || '-'} · ${item.decisionBasis || '待决定'}`;
+  }
+
+  /** 联单废物代码与产废单位当前许可类别的匹配结果。 */
+  categoryMatch(item: DomainRecord): { category: string; matched: boolean } {
+    return matchWasteCategory(item.wasteCode, this.permittedCategories(item));
+  }
+
+  permittedList(item: DomainRecord): string {
+    const categories = this.permittedCategories(item);
+    return categories.length ? categories.join('、') : '未查询到产废单位许可';
+  }
+
+  private permittedCategories(item: DomainRecord): string[] {
+    if (item.permittedCategories?.length) return item.permittedCategories;
+    const code = (item.generatorCode || '').toUpperCase();
+    return this.generatorCategories.get(code) || [];
+  }
+
+  private async loadGeneratorCategories(): Promise<void> {
+    try {
+      const result = await request<DomainRecord[]>('/generators?page=1&pageSize=100');
+      this.generatorCategories = new Map(
+        (result.data || []).map((generator) => [
+          generator.code.toUpperCase(),
+          generator.permittedCategoryCodes?.length ? generator.permittedCategoryCodes : parsePermittedCategories(generator.wasteCategories)
+        ])
+      );
+    } catch {
+      this.generatorCategories = new Map();
+    }
   }
 
   transitionLabel(status: string): string {

@@ -19,6 +19,9 @@ type WasteGenerator struct {
 	EffectiveAt     time.Time `json:"effectiveAt"`
 	Evidence        string    `json:"evidence" gorm:"size:2000"`
 	RelatedCode     string    `json:"relatedCode" gorm:"size:64;index"`
+	// PermittedCategoryCodes 由 wasteCategories 实时解析得到，仅用于工作台展示，
+	// 不落库也不参与写入契约，保证历史接口字段保持兼容。
+	PermittedCategoryCodes []string `json:"permittedCategoryCodes,omitempty" gorm:"-"`
 }
 
 func (item *WasteGenerator) GetBase() *BaseModel { return &item.BaseModel }
