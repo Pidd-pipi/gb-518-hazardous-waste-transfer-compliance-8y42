@@ -84,6 +84,47 @@ func TestRBACLinkedComplianceWorkflowAndAuditing(t *testing.T) {
 	})
 	assertStatus(t, response, http.StatusConflict)
 
+	// Narrowing the generator permit must reject the whole shipment while
+	// leaving the manifest status and version untouched, then be re-allowed
+	// once the permit scope covers the waste code again.
+	generator := findGenerator(t, engine, operator, "WG-001")
+	narrowed := generatorPayload("HW17 表面处理废物、HW49 其他废物")
+	response, _ = request(t, engine, http.MethodPut, fmt.Sprintf("/api/generators/%d", generator.ID), operator, "generator-permit-narrow", withVersion(narrowed, generator.Version))
+	assertStatus(t, response, http.StatusOK)
+	response, body = request(t, engine, http.MethodPost, fmt.Sprintf("/api/manifests/%d/transition", manifest.ID), operator, "manifest-ship-narrowed", map[string]any{
+		"status": "in_transit", "expectedVersion": manifest.Version, "reason": "permit scope was narrowed",
+	})
+	assertStatus(t, response, http.StatusUnprocessableEntity)
+	if !bytes.Contains(body, []byte("HW08")) || !bytes.Contains(body, []byte("发运")) {
+		t.Fatalf("narrowed permit rejection must be readable: %s", string(body))
+	}
+	manifest = decodeRecord(t, mustGet(t, engine, fmt.Sprintf("/api/manifests/%d", manifest.ID), operator))
+	if manifest.Status != "submitted" || manifest.Version != 2 {
+		t.Fatalf("rejected shipment must keep status/version: status=%q version=%d", manifest.Status, manifest.Version)
+	}
+	restored := generatorPayload("HW08 废矿物油，HW17 表面处理废物、HW49 其他废物")
+	response, _ = request(t, engine, http.MethodPut, fmt.Sprintf("/api/generators/%d", generator.ID), operator, "generator-permit-restore", withVersion(restored, 2))
+	assertStatus(t, response, http.StatusOK)
+	response, body = request(t, engine, http.MethodPost, fmt.Sprintf("/api/manifests/%d/transition", manifest.ID), operator, "manifest-ship-reverified", map[string]any{
+		"status": "in_transit", "expectedVersion": manifest.Version, "reason": "current permit re-verified",
+	})
+	assertStatus(t, response, http.StatusOK)
+	manifest = decodeRecord(t, body)
+	if manifest.Status != "in_transit" || manifest.Version != 3 {
+		t.Fatalf("manifest shipment was not persisted after re-verification: %+v", manifest)
+	}
+
+	response, body = request(t, engine, http.MethodPost, "/api/manifests", operator, "manifest-create-out-of-scope", outOfScopePayload("TM-ROUTER-004"))
+	assertStatus(t, response, http.StatusUnprocessableEntity)
+	if !bytes.Contains(body, []byte("HW34")) || !bytes.Contains(body, []byte("许可类别")) {
+		t.Fatalf("category violation must return a readable business error: %s", string(body))
+	}
+	response, body = request(t, engine, http.MethodGet, "/api/manifests?page=1&pageSize=20&search=TM-ROUTER-004", operator, "", nil)
+	assertStatus(t, response, http.StatusOK)
+	if envelope := decodeEnvelope(t, body); envelope.Meta.Total != 0 {
+		t.Fatalf("rejected draft must not be persisted, found total=%d", envelope.Meta.Total)
+	}
+
 	response, body = request(t, engine, http.MethodPost, "/api/manifests", operator, "manifest-create-unverified", manifestPayload("TM-ROUTER-002", "CP-001"))
 	assertStatus(t, response, http.StatusCreated)
 	unverified := decodeRecord(t, body)
@@ -137,6 +178,19 @@ func TestRBACLinkedComplianceWorkflowAndAuditing(t *testing.T) {
 	var envelope apiEnvelope
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Meta.Total < 5 {
 		t.Fatalf("expected audited mutations, got total=%d error=%v", envelope.Meta.Total, err)
+	}
+
+	// Workbench views must expose transferable categories and match results
+	// while keeping all historical fields in the same JSON shape.
+	response, body = request(t, engine, http.MethodGet, "/api/generators?page=1&pageSize=20&search=WG-001", operator, "workbench-generators", nil)
+	assertStatus(t, response, http.StatusOK)
+	if !bytes.Contains(body, []byte("\"permittedCategories\":[\"HW08\",\"HW17\",\"HW49\"]")) {
+		t.Fatalf("generator workbench must expose parsed permitted categories: %s", string(body))
+	}
+	response, body = request(t, engine, http.MethodGet, "/api/manifests?page=1&pageSize=20&search=TM-ROUTER-001", operator, "workbench-manifests", nil)
+	assertStatus(t, response, http.StatusOK)
+	if !bytes.Contains(body, []byte("\"categoryMatched\":true")) || !bytes.Contains(body, []byte("HW08-900-249-08")) {
+		t.Fatalf("manifest workbench must expose the category match result: %s", string(body))
 	}
 }
 
@@ -220,6 +274,58 @@ func manifestPayload(code, carrier string) map[string]any {
 		"riskLevel": "medium", "metricValue": 68, "metricUnit": "score", "effectiveAt": time.Now().UTC().Format(time.RFC3339),
 		"evidence": "minio://evidence/tests/manifest.pdf", "relatedCode": strings.ReplaceAll(code, "TM", "REL"),
 	}
+}
+
+func outOfScopePayload(code string) map[string]any {
+	payload := manifestPayload(code, "CP-002")
+	payload["wasteCode"] = "HW34-900-300-34"
+	return payload
+}
+
+func generatorPayload(categories string) map[string]any {
+	return map[string]any{
+		"name": "产废单位示例一", "permitNumber": "PERMIT-WG-001",
+		"permitExpiresAt": time.Now().UTC().AddDate(1, 0, 0).Format(time.RFC3339),
+		"wasteCategories": categories, "facility": "危险废物转运合规核验区域1", "owner": "运行一组",
+		"category": "常规", "riskLevel": "low", "metricValue": 12.5, "metricUnit": "unit",
+		"effectiveAt": time.Now().UTC().Format(time.RFC3339), "evidence": "已完成基础证据核对", "relatedCode": "REL-518-01",
+	}
+}
+
+func withVersion(payload map[string]any, version uint) map[string]any {
+	payload["expectedVersion"] = version
+	return payload
+}
+
+func findGenerator(t *testing.T, engine http.Handler, token, code string) record {
+	t.Helper()
+	response, body := request(t, engine, http.MethodGet, "/api/generators?page=1&pageSize=100&search="+code, token, "", nil)
+	assertStatus(t, response, http.StatusOK)
+	var envelope apiEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("decode generator list: %v body=%s", err, string(body))
+	}
+	var items []record
+	if err := json.Unmarshal(envelope.Data, &items); err != nil || len(items) != 1 {
+		t.Fatalf("expected exactly one generator %s, got %d: %v", code, len(items), err)
+	}
+	return items[0]
+}
+
+func mustGet(t *testing.T, engine http.Handler, path, token string) []byte {
+	t.Helper()
+	response, body := request(t, engine, http.MethodGet, path, token, "", nil)
+	assertStatus(t, response, http.StatusOK)
+	return body
+}
+
+func decodeEnvelope(t *testing.T, body []byte) apiEnvelope {
+	t.Helper()
+	var envelope apiEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("decode envelope: %v body=%s", err, string(body))
+	}
+	return envelope
 }
 
 func checkPayload(code, manifest string) map[string]any {

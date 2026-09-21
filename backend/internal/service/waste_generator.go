@@ -13,8 +13,8 @@ import (
 )
 
 type WasteGeneratorService interface {
-	List(context.Context, dto.PageQuery) (repository.Page[model.WasteGenerator], error)
-	Get(context.Context, uint) (model.WasteGenerator, error)
+	List(context.Context, dto.PageQuery) (repository.Page[dto.WasteGeneratorView], error)
+	Get(context.Context, uint) (dto.WasteGeneratorView, error)
 	Create(context.Context, dto.CreateWasteGenerator, string, string) (model.WasteGenerator, error)
 	Update(context.Context, uint, dto.UpdateWasteGenerator, string, string) (model.WasteGenerator, error)
 	Transition(context.Context, uint, dto.TransitionRequest, string, string) (model.WasteGenerator, error)
@@ -31,12 +31,35 @@ func NewWasteGeneratorService(repo repository.WasteGeneratorRepository, security
 	return &wasteGeneratorService{repository: repo, security: security}
 }
 
-func (s *wasteGeneratorService) List(ctx context.Context, query dto.PageQuery) (repository.Page[model.WasteGenerator], error) {
-	return s.repository.List(ctx, query)
+func (s *wasteGeneratorService) List(ctx context.Context, query dto.PageQuery) (repository.Page[dto.WasteGeneratorView], error) {
+	page, err := s.repository.List(ctx, query)
+	if err != nil {
+		return repository.Page[dto.WasteGeneratorView]{}, err
+	}
+	views := make([]dto.WasteGeneratorView, 0, len(page.Items))
+	for _, item := range page.Items {
+		views = append(views, toGeneratorView(item))
+	}
+	return repository.Page[dto.WasteGeneratorView]{
+		Items: views, Total: page.Total, Page: page.Page, PageSize: page.PageSize,
+	}, nil
 }
 
-func (s *wasteGeneratorService) Get(ctx context.Context, id uint) (model.WasteGenerator, error) {
-	return s.repository.Get(ctx, id)
+func (s *wasteGeneratorService) Get(ctx context.Context, id uint) (dto.WasteGeneratorView, error) {
+	item, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return dto.WasteGeneratorView{}, err
+	}
+	return toGeneratorView(item), nil
+}
+
+// toGeneratorView exposes the parsed transferable category list alongside the
+// stored permit text; historical fields remain unchanged.
+func toGeneratorView(item model.WasteGenerator) dto.WasteGeneratorView {
+	return dto.WasteGeneratorView{
+		WasteGenerator:      item,
+		PermittedCategories: ParsePermitCategories(item.WasteCategories),
+	}
 }
 
 func (s *wasteGeneratorService) Create(ctx context.Context, input dto.CreateWasteGenerator, actor, requestID string) (model.WasteGenerator, error) {

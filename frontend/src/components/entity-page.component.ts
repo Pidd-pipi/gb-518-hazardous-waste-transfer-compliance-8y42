@@ -9,6 +9,7 @@ import type { EntityStore } from '../stores/factory';
 import type { DomainRecord, EntityConfig } from '../types/domain';
 import { TRANSITIONS } from '../types/status';
 import { formatDate } from '../utils/format';
+import { parsePermitCategories, wasteCodeCategory } from '../utils/waste-category';
 import { ConfirmDialogComponent } from './common/confirm-dialog.component';
 import { LicensePanelComponent } from './common/license-panel.component';
 import { MetricCardComponent } from './common/metric-card.component';
@@ -48,7 +49,15 @@ import { StatusBadgeComponent } from './common/status-badge.component';
               <td><strong>{{ item.code }}</strong></td>
               <td>{{ item.name }}<small>{{ item.facility }}</small></td>
               <td><app-status-badge [status]="item.status" /></td>
-              <td><span class="domain-detail">{{ domainDetail(item) }}</span><small>{{ item.evidence }}</small></td>
+              <td><span class="domain-detail">{{ domainDetail(item) }}</span><small>{{ item.evidence }}</small>
+                <span *ngIf="config.key === 'wasteGenerator'" class="category-chips">
+                  <span *ngFor="let cat of permittedCategories(item)" class="category-chip category-chip--ok">{{ cat }}</span>
+                </span>
+                <span *ngIf="config.key === 'transferManifest'" class="category-chips">
+                  <span class="category-chip" [class.category-chip--ok]="item.categoryMatched === true" [class.category-chip--bad]="item.categoryMatched === false">{{ wasteCategoryLabel(item) }}</span>
+                  <span *ngIf="item.categoryMatched === false" class="category-chip category-chip--bad">{{ item.categoryMismatch || '超出许可类别' }}</span>
+                </span>
+              </td>
               <td><span [class]="'risk risk--' + item.riskLevel">{{ item.riskLevel }}</span></td>
               <td>{{ item.owner }}</td>
               <td>{{ item.metricValue }} {{ item.metricUnit }}</td>
@@ -106,7 +115,7 @@ export class EntityPageComponent implements OnInit {
     const descriptions: Record<string, string> = {
       wasteGenerator: '核对产废许可有效期、废物类别与证据文件。',
       carrierProfile: '复核承运许可证、有效车辆和资质证据。',
-      transferManifest: '关联产废单位与承运方，跟踪联单全流程。',
+      transferManifest: '关联产废单位与承运方，废物代码须落在产废许可类别内，提交与发运前按当前许可重新核验。',
       complianceCheck: '基于联单证据形成不可回退的核验决定。'
     };
     return descriptions[this.config.key] || `管理${this.config.label}状态和证据。`;
@@ -115,8 +124,16 @@ export class EntityPageComponent implements OnInit {
   domainDetail(item: DomainRecord): string {
     if (this.config.key === 'wasteGenerator') return `${item.permitNumber || '-'} · ${item.wasteCategories || '-'}`;
     if (this.config.key === 'carrierProfile') return `${item.licenseNumber || '-'} · ${item.vehicleCount || 0} 辆`;
-    if (this.config.key === 'transferManifest') return `${item.generatorCode} → ${item.carrierCode} · ${item.quantityKg} kg`;
+    if (this.config.key === 'transferManifest') return `${item.generatorCode} → ${item.carrierCode} · ${item.wasteCode} · ${item.quantityKg} kg`;
     return `${item.manifestCode || '-'} · ${item.decisionBasis || '待决定'}`;
+  }
+
+  permittedCategories(item: DomainRecord): string[] {
+    return item.permittedCategories ?? parsePermitCategories(item.wasteCategories);
+  }
+
+  wasteCategoryLabel(item: DomainRecord): string {
+    return wasteCodeCategory(item.wasteCode) || item.wasteCode || '未识别类别';
   }
 
   transitionLabel(status: string): string {

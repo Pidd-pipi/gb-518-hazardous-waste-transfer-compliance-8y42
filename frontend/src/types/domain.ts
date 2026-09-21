@@ -29,6 +29,9 @@ export interface DomainRecord {
 	manifestCode?: string;
 	checklist?: string;
 	decisionBasis?: string;
+  permittedCategories?: string[];
+  categoryMatched?: boolean;
+  categoryMismatch?: string;
   createdAt: string;
   updatedAt: string;
 }

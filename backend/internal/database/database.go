@@ -133,7 +133,7 @@ func seedWasteGenerator(ctx context.Context, db *gorm.DB) error {
 	items := []model.WasteGenerator{
 
 		{BaseModel: model.BaseModel{Code: "WG-001", Name: "产废单位示例一", Status: "active", Version: 1,
-			Description: "用于启动验证和主要流程演示的产废单位记录"}, PermitNumber: "PERMIT-WG-001", PermitExpiresAt: now.AddDate(1, 0, 0), WasteCategories: "HW08 废矿物油",
+			Description: "用于启动验证和主要流程演示的产废单位记录"}, PermitNumber: "PERMIT-WG-001", PermitExpiresAt: now.AddDate(1, 0, 0), WasteCategories: "HW08 废矿物油，HW17 表面处理废物、HW49 其他废物",
 			Facility: "危险废物转运合规核验区域1", Owner: "运行一组",
 			Category: "常规", RiskLevel: "low", MetricValue: 12.5, MetricUnit: "unit",
 			EffectiveAt: now.Add(0 * time.Hour), Evidence: "已完成基础证据核对", RelatedCode: "REL-518-01"},

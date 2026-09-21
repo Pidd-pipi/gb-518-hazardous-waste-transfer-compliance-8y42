@@ -19,6 +19,9 @@ import { StatusBadgeComponent } from './status-badge.component';
           <small [class.expiring]="remaining(item) !== null && remaining(item)! < 30">
             有效期至 {{ formatDate(expiry(item)) }}
           </small>
+          <small *ngIf="item.permittedCategories?.length" class="permit-categories">
+            可转运类别：<span *ngFor="let cat of item.permittedCategories; let last = last">{{ cat }}{{ last ? '' : '、' }}</span>
+          </small>
         </article>
       </div>
       <ng-template #empty><div class="empty">暂无许可资质</div></ng-template>
